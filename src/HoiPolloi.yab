@@ -1,0 +1,2662 @@
+#!/boot/home/config/bin/yab
+
+REM HoiPolloi People viewer v.0.4
+REM by Michel Clasquin
+
+REM Requires yab v0.2.4 or better
+REM Released into the Public Domain, September 2005
+REM This version specifically adapted to be released as a bound app.
+
+on interrupt continue
+
+REM Warning !!!!! Evil GOTOs ahead!!!!
+REM these came about when I needed an easy way to incorporate a number of 
+REM formerly independent utilities into the main program, ready for binding. Wherever 
+REM HoiPolloi ends up in the directory, there should be a symlink to it in /home/config/bin
+REM to allow these utilities to run.
+
+dowhat$=peek$("argument")
+if dowhat$ = "AD" or dowhat$ = "ad"goto Addresser
+if dowhat$ = "CA" or dowhat$ = "ca"goto CountryAdder
+if dowhat$ = "E2P" or dowhat$ = "e2p"goto Email2People
+if dowhat$ = "HM" or dowhat$ = "hm"goto HomeMerger
+if dowhat$ = "NS" or dowhat$ = "ns"goto NameSwitcher
+if dowhat$ = "NPW" or dowhat$ = "npw"goto NewPersonWizard
+if dowhat$ = "WM" or dowhat$ = "wm"goto WorkMerger
+if dowhat$ = "HELP" or dowhat$ = "help"goto Help
+
+REM otherwise go on with the main program ....
+
+REM **********GLOBAL VARIABLES*******************
+texteditor$ = "/boot/zeta/apps/StyledEdit"
+wordprocessor$= "\"/boot/apps/Office/Gobe Productive 2.0/Gobe Productive\""
+mailapp$= "/boot/apps/Internet/Beam/Beam"
+webapp$ = "/boot/apps/Internet/Firefox/Firefox"
+this_app_name$ = "HoiPolloi"
+this_app_version$ = "0.4"
+open_file$ = ""
+quoted_open_file$ = ""
+copy_string$=""
+show_app$= "RB_people"
+cfg_file$ = "/boot/home/config/settings/HoiPolloi.settings"
+show_ext$ = ""
+fromhelp = 0
+image_err = 0
+extractor = 0
+dim msg$(1)
+dim attribute$(51)
+dim nolabel$(51)
+
+REM *****************MAIN WINDOW**************************
+window open 50,50 to 550,370, "Mainview", "HoiPolloi"
+window set "flags", "Not-Zoomable", "Mainview"
+window set "MaximumTo", 500, 320, "Mainview"
+window set "MinimumTo", 500, 320, "Mainview"
+tooltip color "bgcolor",216,216,216
+tooltip color "textcolor",0,0,0
+layout "none", "Mainview"
+view dropzone "Mainview"
+boxview 2,200 to 117,318, "boxview", "Image", 2, "Mainview"
+view 10,217 to 112,310, "Imageview", "Mainview"
+drawlistbox()
+helpme(0)
+drawbuttons()
+allbuttons("False")
+option set "quit_", "Enable", "True"
+
+REM ***************RADIO BUTTONS**********************
+view 122, 20 to 500, 50, "RBview", "Mainview"
+tooltip "RBview", "Select the Person-compatible program" + chr$(10) + " for which you want to display information."
+radiobutton 0,0, "RB_people", "People", 1, "RBview"
+radiobutton  0,15, "RB_mrpeeps", "MrPeeps", 0, "RBview"
+radiobutton 80,0, "RB_deeperpeople", "DeeperPeople", 0, "RBview"
+radiobutton 80,15, "RB_surgeon", "Surgeon", 0, "RBview"
+radiobutton 193,0, "RB_bluecult", "BlueCult", 0, "RBview"
+radiobutton 193,15, "RB_all", "ALL", 0, "RBview"
+
+REM ***************MENU**************************
+view 0,0 to 500,20, "Menuview", "Mainview"
+menu "File", "Open", "O", "Menuview"
+menu "File", "Quit", "Q", "Menuview"
+menu "Actions", "Refresh", "R", "Menuview"
+menu "Actions", "Copy", "C", "Menuview"
+menu "Actions", "eXport", "X", "Menuview"
+menu "Actions", "Harmonise", "A", "Menuview"
+menu "Actions", "Extractor", "E", "Menuview"
+menu "Utilities", "Addresser", "", "Menuview"
+menu "Utilities", "CountryAdder", "", "Menuview"
+menu "Utilities", "E-mail 2 People", "", "Menuview"
+menu "Utilities", "HomeMerger", "", "Menuview"
+menu "Utilities", "NameSwitcher", "", "Menuview"
+menu "Utilities", "NewPersonWizard", "", "Menuview"
+menu "Utilities", "WorkMerger", "", "Menuview"
+menu "Help", "Help", "H", "Menuview"
+menu "Help", "About", "", "Menuview"
+REM do not wipe out Menuview - things could get unstable
+
+REM ********************************************
+REM                                    MAIN LOOP
+REM ********************************************
+do
+n = split(message$, msg$(), "|:")
+	for i = 1 to n
+rem	if (msg$(i)<>"") print msg$(i) REM Reactivate as required during debugging
+		if msg$(i)="quit_" or msg$(i)="_QuitRequested" or msg$(i) = "Quit" then
+			quitme()
+		elseif msg$(i)="Xquit_" then
+			tooltip "Xassoc_", ""
+			tooltip "Xquit_", ""
+			change_tab("HoiPolloi")
+			extractor = 0
+			restoreview()
+		elseif left$(msg$(i), 3) = "RB_" then
+			show_app$ = msg$(i): copy_string$=""
+			refresh()
+		elseif msg$(i) = "Open" then
+			if (extractor=1) restoreview()
+			openme()
+		elseif msg$(i) = "Help" and extractor = 0 then
+			helpme(1)
+		elseif msg$(i) = "About" then
+			alert this_app_name$ + " Version " + this_app_version$ +" by Michel Clasquin"+ chr$(10) + "Public Domain Software supplied without warranty", "OK", 0
+		elseif msg$(i)="refresh_" or msg$(i) = "Refresh" then
+			if extractor = 0 then
+				refreshme()
+			else
+				listbox clear "detailbox"
+				item add "detailbox", "Working . . .", "LBview"
+				get_attribs()
+				getsurgeon()
+				Xrefresh()
+			endif
+		elseif msg$(i)="copy_" or msg$(i) = "Copy" then
+			copyme()
+		elseif msg$(i)="export_" or msg$(i) = "eXport" then
+			exportme(0)
+		elseif (msg$(i)="extract_" or msg$(i) = "Extractor") and extractor = 0 then
+			extractme()
+		elseif msg$(i)="harmonise_" or msg$(i) = "Harmonise"  then
+			harmoniseme(extractor)
+		elseif msg$(i) = "Addresser" then
+			system("HoiPolloi ad " + quoted_open_file$ + " &")
+		elseif msg$(i) = "CountryAdder" then
+			system("HoiPolloi ca " + quoted_open_file$ + " &")
+		elseif msg$(i) = "E-mail 2 People" then
+			system("HoiPolloi e2p &")
+		elseif msg$(i) = "HomeMerger" then
+			system("HoiPolloi hm " + quoted_open_file$ + " &")
+		elseif msg$(i) = "NameSwitcher" then
+			system("HoiPolloi ns " + quoted_open_file$ + " &")
+		elseif msg$(i) = "NewPersonWizard" then
+			system("HoiPolloi npw &")
+		elseif msg$(i) = "WorkMerger" then
+			system("HoiPolloi wm " + quoted_open_file$ + " &")
+		elseif left$(msg$(i), 4) = "RB2_" and extractor = 1 then
+			show_ext$ = msg$(i): copy_string$=""
+			Xrefresh()
+		elseif msg$(i)="Xassoc_" and show_ext$ = "RB2_notes" then
+			RB2_notes_assoc()
+		elseif msg$(i)="Xassoc_" and show_ext$ = "RB2_internet" then
+			RB2_internet_assoc()
+		elseif msg$(i)="Xassoc_" and (show_ext$ = "RB2_home_address" or show_ext$ = "RB2_work_address") then
+			RB2_h_and_w_assoc()
+		elseif msg$(i)="Xassoc_" and (show_ext$ = "RB2_spouse_address" or show_ext$ = "RB2_asst_address") then
+			RB2_h_and_w_assoc()
+		elseif msg$(i) = "_Dropped" then
+			if (extractor=1) restoreview()
+			dropme(0)
+			break 	REM this break prevents multiple drops being processed. 
+		endif
+	next i
+wait 0.01
+loop
+REM ********************************************
+REM                            END OF MAIN LOOP
+REM ********************************************
+
+REM ********************************************
+REM **************SUBROUTINES*******************
+REM ********************************************
+
+REM ********************************************
+REM *****ROUTINES COMING OFF THE MAIN LOOP******
+REM ********************************************
+
+REM ********************************************
+REM exiting subroutine
+REM ********************************************
+sub quitme()
+listbox clear "detailbox"
+item add "detailbox", "Thank you for using HoiPolloi,", "LBview"
+item add "detailbox", "Extractor and the Utilities.", "LBview"
+wait 1.
+exit
+end sub
+
+REM ********************************************
+REM General details display subroutine
+REM ********************************************
+sub refresh()
+if (open_file$ = "") return
+listbox clear "detailbox"
+switch show_app$
+	case "RB_people":  RB_people(): return
+	case "RB_mrpeeps":  RB_mrpeeps(): return
+	case "RB_deeperpeople":  RB_deeperpeople(): return
+	case "RB_surgeon":  RB_surgeon(): return
+	case "RB_bluecult":  RB_bluecult(): return
+	case "RB_all":  RB_all(): return
+end switch
+end sub
+
+REM ********************************************
+REM file opening subroutine
+REM ********************************************
+sub openme()
+local file_given$
+file_given$ = filepanel load$ "/boot/home/people"
+if (file_given$ = "") return
+dropme(1,file_given$)
+end sub
+
+REM ********************************************
+REM Help subroutine
+REM ********************************************
+sub helpme(newstart)
+REM 0 is startup splash screen, 1 is from main menu
+REM it helps to setup the fromhelp variable later on
+local item$
+restore help_data
+rem draw flush "Imageview"
+if newstart = 0 then
+	allbuttons("False")
+	option set "quit_", "Enable", "True"
+endif
+listbox clear "detailbox"
+while (item$<> "END OF HELP")
+	read item$
+	item add "detailbox", item$, "LBview"
+wend
+fromhelp = newstart
+end sub
+
+REM ********************************************
+REM general display refreshing subroutine
+REM ********************************************
+sub refreshme()
+if (open_file$="") return
+f_error(open_file$,this_app_name$)
+listbox clear "detailbox"
+item add "detailbox", "Working . . .", "LBview"
+get_attribs()
+getsurgeon()
+refresh()
+allbuttons("True")
+end sub
+
+REM ********************************************
+REM copy to clipboard subroutine
+REM ********************************************
+sub copyme()
+if fromhelp=1 then
+	refresh()
+	fromhelp=0
+endif
+if (copy_string$="") return
+clipboard copy copy_string$
+end sub
+
+REM ********************************************
+REM export to file (and optionally edit it) subroutine
+REM ********************************************
+sub exportme(editit)
+local save_file$
+if fromhelp=1 then
+	refresh()
+	fromhelp=0
+endif
+if (copy_string$="") return
+save_file$ = filepanel save$ "/boot/home"
+if (save_file$ = "") return
+open #1, save_file$, "w"
+print #1, copy_string$
+close #1
+system("settype -t text/plain \"" + save_file$ + "\" &")
+if editit = 1 then
+	system(texteditor$ + " " + save_file$ + " &")
+elseif editit = 2 then
+	system(wordprocessor$ + " " + save_file$ + " &")
+endif
+end sub
+
+REM ********************************************
+REM extractor subroutine
+REM ********************************************
+sub extractme()
+if (open_file$="") return
+extractor = 1
+copy_string$=""
+extractview()
+end sub
+
+REM ********************************************
+REM harmonise subroutine
+REM ********************************************
+sub harmoniseme(from_extract)
+if (open_file$ = "") return
+local case1$, case2$, case3$
+local check_for$, sys_string$
+local changes, mrpeeps, other,decision
+local title$(1), h, title$
+changes = 0
+f_error(open_file$,this_app_name$)
+old_file$ = open_file$
+listbox clear "detailbox"
+REM ***************check on cellphone*****************
+mrpeeps=8
+other=13
+check_for$ = "Home Cellphone number"
+case1$= "empty": case2$= "empty"
+if (nolabel$(mrpeeps) <> "") case1$= nolabel$(mrpeeps)
+if (nolabel$(other) <> "") case2$ = nolabel$(other)
+changes = harmonise_main(case1$, case2$, mrpeeps, other, changes, check_for$)
+REM ***************check on ICQ*****************
+mrpeeps=23
+other=24
+check_for$ = "ICQ"
+case1$= "empty": case2$= "empty"
+if (nolabel$(mrpeeps) <> "") case1$= nolabel$(mrpeeps)
+if (nolabel$(other) <> "") case2$ = nolabel$(other)
+changes = harmonise_main(case1$, case2$, mrpeeps, other, changes, check_for$)
+REM ***************check on Position*****************
+mrpeeps=32
+other=46
+check_for$ = "Position"
+case1$= "empty": case2$= "empty"
+if (nolabel$(mrpeeps) <> "") case1$= nolabel$(mrpeeps)
+if (nolabel$(other) <> "") case2$ = nolabel$(other)
+changes = harmonise_main(case1$, case2$, mrpeeps, other, changes, check_for$)
+REM ***************check on First and last names*****************
+item add "detailbox", "Checking on first and last name incompatibilities . . .", "LBview"
+REM some preparatory massaging
+if  nolabel$(20) = "CHANGE-ME" then
+	nolabel$(20) = ""
+elseif  nolabel$(26) = "CHANGE-ME" then
+	nolabel$(26) = ""
+endif
+REM and now we do it
+item add "detailbox", "Adjusting First and Last Names", "LBview"
+h=split(open_file$, title$(), "/")
+for f = 1 to h
+	title$ = title$(f)
+next f
+REM Let's just see if DeeperPeople added one of those CHANGE-ME things to the last name
+if len(title$)>9 then
+	if right$(title$,10) = " CHANGE-ME" then
+		title$ = left$(title$, len(title$) - 9)
+	endif
+endif
+if nolabel$(20) = "" or nolabel$(26) = "" then
+	case1$ = ""
+	case2$ = ""
+	for f = 1 to len(title$)
+		if mid$(title$, f,1) <> " " then
+			case1$ = case1$ + mid$(title$, f,1)
+		else
+			case2$ = mid$(title$, f +1)
+			break
+		endif
+	next f
+	case3$ = case1$ + " " + case2$
+	REM but if the user only gives a first name to a person, this will keep on harmonising each time
+	REM so we add an innocuous space as a last name
+rem	if case2$ = "" then 
+rem		case2$ = " "
+rem	endif
+	sys_string$ = "rmattr META:firstname " + "  \"" + open_file$ +"\""
+	system(sys_string$) 
+	sys_string$ = "rmattr META:lastname " + "  \"" + open_file$ +"\""
+	system(sys_string$) 
+	sys_string$ = "rmattr META:name " + "  \"" + open_file$ +"\""
+	system(sys_string$) 
+	sys_string$ = "addattr META:firstname" + " \"" + case1$ + "\" " + "\"" + open_file$ + "\""
+	system(sys_string$) 
+	sys_string$ = "addattr META:lastname" + " \"" + case2$ + "\" " + "\"" + open_file$ + "\""
+	system(sys_string$) 
+	sys_string$ = "addattr META:name" + " \"" + case3$ + "\" " + "\"" + open_file$ + "\""
+	system(sys_string$) 
+	changes = changes + 1
+endif
+REM check if DP added CHANGE-ME to the filename
+REM I suppose this could have been integrated above, but we have enough spaghetti here already
+item add "detailbox", "Checking filename for DeeperPeople interference . . .", "LBview"
+if right$(open_file$,10) = " CHANGE-ME" then
+	open_file$ = left$(open_file$, len(open_file$) - 10)
+	sys_string$ = "mv \"" + old_file$ + "\" \"" + open_file$ + "\""
+	system(sys_string$)
+	changes = changes + 1
+endif
+REM ***************check on Surgeon Comments*****************
+item add "detailbox", "Checking for Surgeon Comments . . .", "LBview"
+decision = 0
+if attribute$(51) <> "" then
+	item add "detailbox", "Surgeon Comment detected . . .", "LBview"	
+	if nolabel$(30) = "" then
+		sys_string$ = "A Surgeon Comment was detected. Here is a short extract:" + chr$(10)
+		sys_string$ = sys_string$ + left$(attribute$(51),50) + chr$(10)
+		sys_string$ = sys_string$ + "The MR PEEPS Notes field is available. It is recommended" + chr$(10)
+		sys_string$ = sys_string$ + "that you move it in there." + chr$(10)
+	else
+		sys_string$ = "A Surgeon Comment was detected. Here is a short extract:" + chr$(10)
+		sys_string$ = sys_string$ + left$(attribute$(51),100) + chr$(10)
+		sys_string$ = sys_string$ + "The MR PEEPS Notes field is already in use, but" + chr$(10)
+		sys_string$ = sys_string$ + "We can append the Surgeon note there." + chr$(10)
+	endif
+	decision = alert sys_string$, "OK, move it", "No, just delete it", "Do nothing!","none"
+else
+	item add "detailbox", "No Surgeon Comment detected . . .", "LBview"	
+endif
+if decision = 1 then
+	case1$ = nolabel$(30) + chr$(10) + attribute$(51)
+	sys_string$ = "rmattr META:notes " + "  \"" + open_file$ +"\""
+	system(sys_string$) 
+	sys_string$ = "addattr META:notes" + " \"" + case1$ + "\" " + "\"" + open_file$ + "\""
+	system(sys_string$) 
+	nolabel$(30) = case1$
+	changes = changes + 1
+elseif decision = 2 then
+	attribute$(51)=""
+	f_error(open_file$,this_app_name$)
+	open #1, open_file$, "w":close #1
+	changes = changes + 1
+endif
+item add "detailbox", str$(changes) + " Changes made", "LBview"
+item add "detailbox", "Returning to Normal View . . .", "LBview"
+item add "detailbox", "Working . . .", "LBview"
+if changes <> 0 then
+	get_attribs()
+else
+	item add "detailbox", "", "LBview"	
+	item add "detailbox", "NO INCOMPATIBILITIES DETECTED!", "LBview"
+	wait 1.5
+endif
+fromhelp = 0
+if (from_extract=1) Xrefresh()
+if (from_extract=0) refreshme()
+end sub
+
+REM ********************************************
+REM dropped file subroutine - also does file,open
+REM open = 0 for drop, 1 for file,open
+REM ********************************************
+sub dropme(f_open, file_given$)
+if f_open = 0 then
+	file_given$ = msg$(i + 1)
+endif
+local testtype
+REM first check if filetype is a Person
+testtype = check_dropped_filetype(file_given$)
+if testtype = 0 then
+	return
+else
+	open_file$= file_given$
+endif
+REM that should do it. Now proceed to analyse and present the data
+listbox clear "detailbox"
+item add "detailbox", "Working . . .", "LBview"
+get_attribs()
+draw_image(1)
+refresh()
+change_tab("HoiPolloi")
+allbuttons("True")
+quoted_open_file$ = "\"" + open_file$  + "\""
+end sub
+
+REM ****************************************************
+REM *********ROUTINES TO DISPLAY 5 APPS' CONTENTS**********
+REM ****************************************************
+
+REM ********************************************
+REM RB_people details display subroutine
+REM ********************************************
+sub RB_people()
+local RB_item
+item add "detailbox", " ", "LBview"
+item add "detailbox", "Person details according to PEOPLE", "LBview"
+item add "detailbox", "======================", "LBview"
+restore RB_people_data
+for f = 1 to 14
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		if f = 1 then
+			copy_string$= copy_string$ + attribute$(RB_item)
+		else
+			copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+end sub
+
+REM ********************************************
+REM RB_mrpeeps details display subroutine
+REM ********************************************
+sub RB_mrpeeps()
+local RB_item
+item add "detailbox", " ", "LBview"
+item add "detailbox", "Person details according to MR PEEPS", "LBview"
+item add "detailbox", "======================", "LBview"
+item add "detailbox", "MAIN Tab", "LBview"
+restore RB_MRP_data1
+for f = 1 to 8
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		if f = 1 then
+			copy_string$= copy_string$ + "MAIN Tab" + chr$(10) + attribute$(RB_item) 
+		else
+			copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+item add "detailbox", "PERSONAL Tab", "LBview"
+restore RB_MRP_data2
+copy_string$= copy_string$ + "PERSONAL Tab"
+for f = 1 to 12
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+item add "detailbox", "WORK Tab", "LBview"
+restore RB_MRP_data3
+copy_string$= copy_string$ + "WORK Tab"
+for f = 1 to 15
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+item add "detailbox", "INSTANT MESSAGING Tab", "LBview"
+restore RB_MRP_data4
+copy_string$= copy_string$ + "INSTANT MESSAGING Tab"
+for f = 1 to 5
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+if attribute$(30) <>"" then
+	item add "detailbox", "NOTES Tab", "LBview"
+	copy_string$= copy_string$ + "notes Tab" + chr$(10)
+	item add "detailbox", attribute$(30), "LBview" 
+	copy_string$= copy_string$ + attribute$(30) + chr$(10) 
+endif
+end sub
+
+REM ********************************************
+REM RB_deeperpeople details display subroutine
+REM ********************************************
+sub RB_deeperpeople()
+local RB_item
+item add "detailbox", " ", "LBview"
+item add "detailbox", "Person details according to DEEPER PEOPLE", "LBview"
+item add "detailbox", "===========================", "LBview"
+item add "detailbox", "GENERAL Tab", "LBview"
+restore RB_DP_data1
+for f = 1 to 5
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		if f = 1 then
+			copy_string$= copy_string$ + "GENERAL Tab" + chr$(10) + attribute$(RB_item) 
+		else
+			copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+item add "detailbox", "PERSONAL Tab", "LBview"
+restore RB_DP_data2
+copy_string$= copy_string$ + "PERSONAL Tab"
+for f = 1 to 11
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+item add "detailbox", "PROFESSIONAL Tab", "LBview"
+restore RB_DP_data3
+copy_string$= copy_string$ + "PROFESSIONAL Tab"
+for f = 1 to 14
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+item add "detailbox", "INTERNET Tab", "LBview"
+restore RB_DP_data4
+copy_string$= copy_string$ + "INTERNET Tab"
+for f = 1 to 9
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+if attribute$(30) <>"" then
+	item add "detailbox", "NOTES Tab", "LBview"
+	copy_string$= copy_string$ + "notes Tab" + chr$(10)
+	item add "detailbox", attribute$(30), "LBview" 
+	copy_string$= copy_string$ + attribute$(30) + chr$(10) 
+endif
+end sub
+
+REM ********************************************
+REM RB_surgeon details display subroutine
+REM ********************************************
+sub RB_surgeon()
+item add "detailbox", " ", "LBview"
+item add "detailbox", "Person details according to SURGEON", "LBview"
+item add "detailbox", "=======================", "LBview"
+local RB_item
+restore RB_surgeon_data
+for f = 1 to 15
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		if f = 1 then
+			copy_string$= copy_string$ + attribute$(RB_item) 
+		else
+			copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+if (attribute$(51) <>"") item add "detailbox", "COMMENTS: " + attribute$(51), "LBview" 
+end sub
+
+
+REM ********************************************
+REM RB_bluecult details display subroutine
+REM ********************************************
+sub RB_bluecult()
+item add "detailbox", " ", "LBview"
+item add "detailbox", "Person details according to BLUECULT", "LBview"
+item add "detailbox", "=======================", "LBview"
+local RB_item
+restore RB_bluecult_data
+for f = 1 to 5
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		item add "detailbox", attribute$(RB_item), "LBview"
+		if f = 1 then
+			copy_string$= copy_string$ + attribute$(RB_item) 
+		else
+			copy_string$= copy_string$ + chr$(10) + attribute$(RB_item) 
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+end sub
+
+
+REM ********************************************
+REM RB_all details display subroutine
+REM ********************************************
+sub RB_all()
+copy_string$= copy_string$ + "PEOPLE:" + chr$(10)  
+RB_people()
+item add "detailbox", "", "LBview"
+copy_string$= copy_string$ + chr$(10)  
+copy_string$= copy_string$ + "MR PEEPS:" + chr$(10)  
+RB_mrpeeps()
+item add "detailbox", "", "LBview"
+copy_string$= copy_string$ + chr$(10) 
+copy_string$= copy_string$ + "DEEPER PEOPLE" + chr$(10)  
+RB_deeperpeople()
+item add "detailbox", "", "LBview"
+copy_string$= copy_string$ + chr$(10) 
+copy_string$= copy_string$ + "SURGEON" + chr$(10)  
+RB_surgeon()
+item add "detailbox", "", "LBview"
+copy_string$= copy_string$ + chr$(10) 
+copy_string$= copy_string$ + "BLUE CULT" + chr$(10)  
+RB_bluecult()
+end sub
+
+REM ********************************************************* 
+REM *************EXTRACTOR ROUTINES************************** 
+REM ********************************************************* 
+
+REM ********************************************
+REM display extractor view subroutine
+REM ********************************************
+sub extractview()
+allbuttons("True")
+option set "extract_", "Enable", "False"
+rem option set "harmonise_", "Enable", "False"
+change_tab("Extractor")
+view remove "LBview"
+view 122, 50 to 500, 320, "LBview", "Mainview"
+listbox 1,1 to 240,252, "detailbox", 3, "LBview"
+if (show_ext$ = "") show_ext$ = "RB2_home_address"
+radiobutton 260,05, "RB2_home_address", "Home Address",(show_ext$ = "RB2_home_address"), "LBview"
+radiobutton 260,25, "RB2_spouse_address", "Spouse Address",(show_ext$ = "RB2_spouse_address"), "LBview"
+radiobutton 260,45, "RB2_work_address", "Work Address",(show_ext$ = "RB2_work_address"), "LBview"
+radiobutton 260,65, "RB2_asst_address", "Assistant Address",(show_ext$ = "RB2_asst_address"), "LBview"
+radiobutton 260,85, "RB2_internet", "Internet-related",(show_ext$ = "RB2_internet"), "LBview"
+radiobutton 260,105, "RB2_allphone", "Telephony",(show_ext$ = "RB2_allphone"), "LBview"
+radiobutton 260,125, "RB2_personal", "Personal Data",(show_ext$ = "RB2_personal"), "LBview"
+radiobutton 260,145, "RB2_notes", "Notes",(show_ext$ = "RB2_notes"), "LBview"
+button 258, 220 to 376,237, "Xassoc_", "Associated actions", "LBview"
+button 258, 244 to 376,261, "Xquit_", "Exit Extractor", "LBview"
+tooltip "Xassoc_", "Some useful shortcuts to things you can do with this" + chr$(10) + " information. This button is disabled when it is not" + chr$(10) + "appropriate, i.e. when no spouse or assistant is found. "
+tooltip "Xquit_", "Return to the main HoiPolloi screen. "
+topbuttons_on_off("False")
+Xrefresh()
+end sub
+
+REM ********************************************
+REM details display subroutine
+REM ********************************************
+sub Xrefresh()
+listbox clear "detailbox":
+Xdefault()
+switch show_ext$
+	case "RB2_home_address": RB2_home_address(0): return
+	case "RB2_spouse_address": RB2_home_address(1): return
+	case "RB2_work_address": RB2_work_address(0): return
+	case "RB2_asst_address": RB2_work_address(1): return
+	case "RB2_internet": : RB2_internet(): return
+	case "RB2_allphone": RB2_allphone(): return
+	case "RB2_personal": RB2_personal(): return
+	case "RB2_notes": RB2_notes(): return
+end switch
+end sub
+
+REM ********************************************
+REM default extractor instructions display subroutine
+REM ********************************************
+sub Xdefault()
+item add "detailbox", "EXTRACTOR - Instructions", "LBview"
+item add "detailbox", "================", "LBview"
+item add "detailbox", "COPY and EXPORT work as usual. These ", "LBview"
+item add "detailbox", "instructions will not be copied or saved", "LBview"
+item add "detailbox", "with your selection. HELP is disabled in", "LBview"
+item add "detailbox", "the Extractor view.", "LBview"
+item add "detailbox", "-----------------------------------------------------------------------", "LBview"
+end sub
+
+REM *******EXTRACTOR DISPLAY ROUTINES **************
+
+REM ********************************************
+REM Home address display subroutine
+REM ********************************************
+sub RB2_home_address(do_spouse)
+local RB_item, RB_item$, state$
+REM in case of an spouse call, if spouse is not found then exit
+REM otherwise get the assistant's name and put it in detailbox and copy_string$
+if do_spouse=1 then 
+	if nolabel$(33) = "" then
+		item add "detailbox", "No spouse found", "LBview"
+		option set "Xassoc_", "Enable", "False"
+		return
+	else
+		copy_string$ = nolabel$(33) + " " + nolabel$(26)
+		item add "detailbox", nolabel$(33) + " " + nolabel$(26), "LBview"
+		REM Making the assumption that only the first name would have been input
+		REM for a spuse and that we need to add the lastname
+	endif
+endif
+REM if city is not found, the address probably does not exist
+if nolabel$(10) = "" then
+	item add "detailbox", "No home address found", "LBview"
+	option set "Xassoc_", "Enable", "False"
+	return
+endif
+if (nolabel$(34) <>"") state$ = ", " +nolabel$(34)
+restore RB_home_address_data
+option set "Xassoc_", "Enable", "True"
+for f = 1 to 6
+	read RB_item
+	if nolabel$(RB_item) <> "" then 
+		if f = 1 then
+			if (do_spouse = 1) continue
+			copy_string$= copy_string$ + nolabel$(RB_item)
+			item add "detailbox", nolabel$(RB_item), "LBview"
+		elseif f = 4 then
+			copy_string$= copy_string$ + chr$(10) + nolabel$(RB_item) + state$ 
+			item add "detailbox", nolabel$(RB_item) + state$, "LBview"
+		else
+			copy_string$= copy_string$ + chr$(10) + nolabel$(RB_item) 
+			item add "detailbox", nolabel$(RB_item), "LBview"
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+end sub
+
+REM ********************************************
+REM work address display subroutine - also does assistant
+REM ********************************************
+sub RB2_work_address(do_asst)
+local RB_item, title$, position$, state$, asst$
+REM in case of an assistant call, if assistant is not found then exit
+REM otherwise get the assistant's name and put it in detailbox and copy_string$
+if do_asst=1 then 
+	if nolabel$(5) = "" then
+		item add "detailbox", "No assistant found", "LBview"
+		option set "Xassoc_", "Enable", "False"
+		return
+	else
+		copy_string$ = nolabel$(5) + chr$(10) + "Assistant to "
+		item add "detailbox", nolabel$(5), "LBview"
+		asst$ = "Assistant to "
+	endif
+endif
+REM if workcity is not found, the address probably does not exist
+if nolabel$(41) = "" then
+	item add "detailbox", "No work address found", "LBview"
+	option set "Xassoc_", "Enable", "False"
+	return
+endif
+if (nolabel$(35) <>"") title$ = nolabel$(35) + " "
+if (nolabel$(32) <>"") position$ = nolabel$(32) + ", "
+if (nolabel$(47) <>"") state$ = ", " +nolabel$(47)
+option set "Xassoc_", "Enable", "True"
+restore RB_work_address_data
+for f = 1 to 7
+	read RB_item
+	if nolabel$(RB_item) <> "" then 
+		if f = 1 then
+			copy_string$= copy_string$ + title$ + nolabel$(RB_item)
+			if (do_asst = 0) item add "detailbox", title$ + nolabel$(RB_item), "LBview"
+			if (do_asst = 1) item add "detailbox", asst$ + title$ + nolabel$(RB_item), "LBview"
+		elseif f = 2 then
+			copy_string$= copy_string$ + chr$(10) + position$ + nolabel$(RB_item)
+			item add "detailbox", position$ + nolabel$(RB_item), "LBview"
+		elseif f = 5 then
+			copy_string$= copy_string$ + chr$(10) + nolabel$(RB_item) + state$ 
+			item add "detailbox", nolabel$(RB_item) + state$, "LBview"
+		else
+			copy_string$= copy_string$ + chr$(10) + nolabel$(RB_item) 
+			item add "detailbox", nolabel$(RB_item), "LBview"
+		endif
+	endif
+next f
+copy_string$= copy_string$ + chr$(10) 
+end sub
+
+REM ********************************************
+REM Internet display subroutine
+REM ********************************************
+sub RB2_internet()
+option set "Xassoc_", "Enable", "True"
+restore RB_internet_data
+for f = 1 to 13
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		copy_string$= copy_string$ + attribute$(RB_item) + chr$(10) 
+		item add "detailbox", attribute$(RB_item), "LBview"
+	endif
+next f
+end sub
+
+REM ********************************************
+REM Telephone display subroutine
+REM ********************************************
+sub RB2_allphone()
+option set "Xassoc_", "Enable", "False"
+restore RB_phone_data
+for f = 1 to 7
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		copy_string$= copy_string$ + attribute$(RB_item) + chr$(10) 
+		item add "detailbox", attribute$(RB_item), "LBview"
+	endif
+next f
+end sub
+
+REM ********************************************
+REM personal details display subroutine
+REM ********************************************
+sub RB2_personal()
+option set "Xassoc_", "Enable", "False"
+restore RB_personal_data
+for f = 1 to 7
+	read RB_item
+	if attribute$(RB_item) <> "" then 
+		copy_string$= copy_string$ + attribute$(RB_item) + chr$(10) 
+		item add "detailbox", attribute$(RB_item), "LBview"
+	endif
+next f
+end sub
+
+REM ********************************************
+REM notes display subroutine
+REM ********************************************
+sub RB2_notes()
+local splitup$(1), n 
+option set "Xassoc_", "Enable", "True"
+copy_string$= nolabel$(30)
+n = split(copy_string$, splitup$(), chr$(10))
+for z = 1 to n
+	item add "detailbox", splitup$(z),"LBview"
+next z
+end sub
+
+REM ******EXTRACTOR ASSOCIATED ACTIONS ROUTINE************
+
+REM ********************************************
+REM home and work address associated actions subroutine
+REM ********************************************
+sub RB2_h_and_w_assoc()
+local alertbutton
+alertbutton = alert "Open this address in a new letter in which editor?", "Word processor", "Text Editor", "None", "none" 
+if alertbutton = 1 then 
+	exportme(2)
+elseif alertbutton = 2 then 
+	exportme(1)
+endif
+end sub
+
+REM ********************************************
+REM Internet associated actions subroutine
+REM ********************************************
+sub RB2_internet_assoc()
+local alert1, alert2, alert3, alert4
+local email1$,email2$,url1$,url2$
+email1$= nolabel$(14)
+email2$= nolabel$(15)
+url1$= nolabel$(36)
+url2$= nolabel$(37)
+alert1 = alert "What would you like to do?","Send an E-mail", "Open a website", "Nothing", "None"
+if (alert1 = 3 ) return
+REM DO THE E-MAIL
+if (alert1 = 1) alert2 = alert "To which address?","Home Address", "Work Address", "Neither", "None"
+if alert2 = 1 then
+	if (email1$="") then
+		alert "Sorry, there is no Home e-mail address available", "OK", 0
+		return
+	else
+		system(mailapp$ +" mailto:" + email1$ + " &")
+		return
+	endif
+elseif alert2 = 2 then
+	if (email2$="") then
+		alert "Sorry, there is no Work e-mail address available", "OK", 0
+		return
+	else
+		system(mailapp$ +" mailto:" + email2$ + " &")
+		return
+	endif
+endif
+REM NOW DO THE URLS
+if (alert1 = 2) alert3 = alert "Which URL?","Home URL", "Work URL", "Neither", "None"
+if alert3 = 1 then
+	if (url1$="") then
+		alert "Sorry, there is no Home URL available", "OK", 0
+		return
+	else
+		system(webapp$ + " " + url1$ + " &")
+		return
+	endif
+elseif alert3 = 2 then
+	if (url2$="") then
+		alert "Sorry, there is no Work URL available", "OK", 0
+		return
+	else
+		system(webapp$ + " " + url2$ + " &")
+		return
+	endif
+endif
+end sub
+
+REM ********************************************
+REM notes associated actions subroutine
+REM ********************************************
+sub RB2_notes_assoc()
+local alertbutton
+alertbutton = alert "Which associated action do you want to take?", "Export & Edit", "Send as E-mail", "None", "none" 
+if alertbutton = 1 then 
+	exportme(1)
+elseif alertbutton = 2 then 
+	system(mailapp$ + " -body " + "\"" + copy_string$+ "\"" + " &")
+endif
+end sub
+
+REM ***************************************************
+REM *************MISCELLANEOUS ROUTINES****************
+REM ***************************************************
+
+REM ********************************************
+REM display person name in tab subroutine
+REM ********************************************
+sub change_tab(progname$)
+local title$(1), h, title$
+h=split(open_file$, title$(), "/")
+for f = 1 to h
+	title$ = title$(f)
+next f
+window set "Title", progname$ + ": " + title$, "Mainview"
+end sub
+
+REM ********************************************
+REM subroutine to extract attributes and place them into array
+REM ********************************************
+sub get_attribs()
+local meta$, attr_label$, prefix$, suffix$, sys_string$, msg$
+splasher("Getting attributes of Person file. . .",200,50)
+prefix$= "catattr "
+suffix$=" | cut -d\":\" -f3-"
+restore attributes
+f_error(open_file$,this_app_name$)
+for f = 1 to 50
+	read meta$
+	read attr_label$
+	sys_string$ = prefix$ + meta$ + " \"" + open_file$ + "\"" + suffix$
+	msg$= system$(sys_string$)
+		msg$ = mid$(msg$, 2)			REM strip off initial space
+		msg$ = left$(msg$,len(msg$) -1)	REM strip off newline
+	if msg$ = "" then
+		attribute$(f) = ""
+		nolabel$(f) = ""
+	else
+		attribute$(f) = attr_label$ + msg$
+		nolabel$(f) = msg$
+	endif
+next f
+splasher ("killsplasher")
+end sub
+
+REM ********************************************
+REM image drawing subroutine
+REM ********************************************
+sub draw_image(do_51)
+attribute$(51) = ""
+draw flush "Imageview"
+f_error(open_file$,this_app_name$)
+image_err=draw image 0,0, open_file$, "Imageview"
+if image_err <> 0 then
+	tooltip "boxview", "If you don't see an image here, add" + chr$(10) + "one with MrPeeps, then Refresh! "
+else
+	tooltip "boxview", ""
+endif
+if do_51 <> 0 and image_err <> 0 then
+	getsurgeon()
+endif
+end sub
+
+REM ********************************************
+REM get Surgeon Note subroutine
+REM ********************************************
+sub getsurgeon()
+local surg_note$
+if (image_err = 0) return
+attribute$(51) = ""
+f_error(open_file$,this_app_name$)
+open #1,  open_file$, "r"
+while (not eof(1))
+	surg_note$ = getline$(1)
+	attribute$(51) = attribute$(51) + surg_note$ + chr$(10)
+wend
+close #1
+if (attribute$(51) = chr$(10)) attribute$(51) =""
+end sub
+
+REM ********************************************
+REM Button drawing subroutine
+REM ********************************************
+sub drawbuttons()
+local starty, ypos, buttonID$, buttonlabel$, tooltip$
+restore button_data
+starty = 22
+for f = 0 to 5
+	read buttonID$
+	read buttonlabel$
+	read tooltip$
+	ypos = starty + (f *23)
+	button 5, ypos to 115,ypos + 28, buttonID$, buttonlabel$, "Mainview"
+	tooltip buttonID$, tooltip$
+	starty = starty + 6
+next f
+end sub
+REM Buttons data
+
+REM ********************************************
+REM activate/deactivate all buttons subroutine
+REM ********************************************
+sub allbuttons(state$)
+local buttonID$, buttonlabel$, tooltip$
+restore button_data
+for f = 0 to 5
+	read buttonID$
+	read buttonlabel$
+	read tooltip$
+	option set buttonID$, "Enable", state$
+next f
+end sub
+
+REM ********************************************
+REM draw the standard listbox subroutine
+REM ********************************************
+sub drawlistbox()
+view 122, 50 to 500, 320, "LBview", "Mainview"
+listbox 1,1 to 360,252, "detailbox", 3, "LBview"
+end sub
+
+REM ********************************************
+REM display default view subroutine
+REM ********************************************
+sub restoreview()
+extractor= 0
+allbuttons("True")
+topbuttons_on_off("True")
+view remove "LBview"
+drawlistbox()
+refresh()
+end sub
+
+REM ********************************************
+REM enable/disable app radiobuttons subroutine
+REM ********************************************
+sub topbuttons_on_off(state$)
+option set "RB_people", "Enable", state$
+option set "RB_mrpeeps", "Enable", state$
+option set "RB_deeperpeople", "Enable", state$
+option set "RB_surgeon", "Enable", state$
+option set "RB_bluecult", "Enable", state$
+option set "RB_all", "Enable", state$
+end sub
+
+
+REM ********************************************
+REM Main harmonising engine subroutine
+REM ********************************************
+sub harmonise_main(case1$, case2$, mrpeeps, other, changes, check_for$)
+local case3$, meta1$, meta2$, meta3$, sys_string$
+local decision
+item add "detailbox", "Checking on " + check_for$ + " data . . .", "LBview"
+if case1$ <> case2$ then
+	restore attributes
+	for k = 1 to mrpeeps
+		read meta1$
+		read meta3$
+	next k
+	restore attributes
+	for k = 1 to other
+		read meta2$
+		read meta3$
+	next k
+	meta3$=""
+	sys_string$ = "MR PEEPS gives the value of " + check_for$ + " as" + chr$(10)
+	sys_string$ = sys_string$ + case1$ + chr$(10)
+	sys_string$ = sys_string$ + "while other programs  give it as"  + chr$(10)
+	sys_string$ = sys_string$ + case2$
+	decision = alert sys_string$, "Use MR PEEPS Value", "Use other value", "Do not change", "none" 
+	if decision = 1 then
+		meta3$ = meta2$
+		case3$ = case1$
+	elseif decision = 2 then
+		meta3$ = meta1$
+		case3$ = case2$
+	endif
+	item add "detailbox", "adjusting " + check_for$, "LBview"
+	sys_string$ = "rmattr " + meta3$ + "  \"" + open_file$ +"\""
+	system(sys_string$) 
+	sys_string$ = "addattr " + meta3$  + " \"" + case3$ +"\" \"" + open_file$ +"\""
+	system(sys_string$) 
+	changes = changes + 1
+else
+	item add "detailbox", "No incompatibilities found", "LBview"
+endif
+return changes
+end sub
+
+REM ********************************************
+REM Routine to test if a dropped file is indeed a Person file
+REM Usage: variable = check_dropped_filetype(temp_open_file$)
+REM Use it to set the  global variable open_file$ in the main program
+REM ********************************************
+sub check_dropped_filetype(temp_open_file$)
+local prefix$, suffix$,filetype$, testtype
+prefix$= "catattr BEOS:TYPE"
+suffix$=" | cut -d\":\" -f3-"
+file_type$ = prefix$ + " \"" + temp_open_file$ + "\"" + suffix$
+file_type$ = mid$(system$(file_type$),2)		REM run system command and strip off inital space
+file_type$ = left$(file_type$, len(file_type$) -1)	REM strip off terminal newline
+if file_type$ <>"application/x-person" then
+	alert "That is NOT a Person file!", "Sorry ...", 4
+	testtype=0
+else
+	testtype = 1
+endif
+return testtype
+end sub
+
+REM ********************************************
+REM Line input workaround subroutine
+REM Workaround for line input's inability to read high-ascii characters from a file
+REM Thanks to Jan Bungeroth for the suggestion
+REM Usage: var$ = getline$(number_of_stream_to_open)
+REM ********************************************
+sub getline$(handle)
+local tmp$, retstring$
+while(not eof(handle) and tmp$<>chr$(10) and tmp$<>chr$(13)) REM 10 for Unix newline, 13 for Windows CR
+	retstring$ = retstring$ + tmp$
+	tmp$ = chr$(peek(handle)) REM read one byte from the file stream
+wend
+return retstring$
+end sub
+
+REM ********************************************
+REM utilities dropzone subroutine
+REM Usage:makedropview((textX,textY,patternUL,patternUR,patternLL,pattern LR, optional_viewname$)
+REM create the actual Dropview in the main program, then call this routine
+REM ********************************************
+sub makedropview(textx,texty,patx1,paty1,patx2,paty2, optional_viewname$)
+local pattern$
+if (optional_viewname$="") optional_viewname$= "Dropview"
+pattern$ = "207135135135207207207255"
+draw set 0, pattern$
+draw rect patx1,paty1 to patx2,paty2, optional_viewname$
+draw text textx,texty, "Drop a Person here", optional_viewname$
+view dropzone optional_viewname$
+end sub
+
+REM ********************************************
+REM file opening error subroutine
+REM Usage:f_error(full_path_to_Person_file$,this_app's_filenamename$)
+REM assumes that the app is somewhere in the $PATH 
+REM ********************************************
+sub f_error(open_file$,this_app_name$)
+local sys_string$,f_error
+f_error = open(open_file$, "r")
+if f_error = 0 then
+	alert "ERROR! The Person file has been renamed by you or an outside program! Or possibly it has been deleted.  This program will attempt to restart", "OK",3
+	 sys_string$ = this_app_name$ + " &"
+	system( sys_string$)
+	exit
+endif
+close #1
+end sub
+
+REM ********************************************
+REM DRAW ARROW subroutine for address merger apps
+REM ********************************************
+sub draw_arrow()
+local arrow_height,start_arrow, end_arrow
+for f = 150 to  169
+	draw line f, 110 to f,129, "Mainview"
+next f
+for f = 170 to 199
+arrow_height = 200-f
+start_arrow = int(120 - (arrow_height/2))
+end_arrow  = int(120 + (arrow_height/2))
+	draw line f,start_arrow to f,end_arrow, "Mainview"
+next f
+end sub
+
+REM ********************************************
+REM Instructions printing routine for address merge apps
+REM Usage: draw_instructions(number_of_view_to_use)
+REM ********************************************
+sub draw_instructions(useview)
+local use_view$
+use_view$ = "Resultsview" + str$(useview)
+draw text 4,15, "INSTRUCTIONS:", use_view$
+restore instructions
+for f = 30 to 100 step 10
+	read msg$
+	draw text 5, f, msg$, use_view$
+next f
+end sub
+label instructions
+data "Drop 2 Persons on the"
+data "dropboxes above. Then"
+data "copy the address from"
+data "the left Person to the"
+data "Person on the right"
+data"with the l/h button, or"
+data "switch them around "
+data "with the r/h button."
+
+
+REM ********************************************
+REM subroutine to throw a small splash screen in the centre of the screen
+REM Usage: splasher("message to be splashed", width, height)
+REM                           width should be at least 140 or will be resized to that
+REM              splasher("killsplasher") to remove splash screen - case-sensitive
+REM ********************************************
+sub splasher(msg$, width, hoogte)
+REM strange, I can use width as a variable, but not height
+local x,y,x2,y2
+if msg$ = "killsplasher" then
+	window close splashview$
+	return
+endif
+if (width<140) width = 140
+x = PEEK("DesktopWidth")
+x = int(x/2) - int(width/2) 
+x2 = x + width
+y = PEEK("DesktopHeight")
+y = int(y/2) - int(hoogte/2) 
+y2 = y + hoogte 
+window open  x,y TO x2,y2, splashview$, "Libhoipolloi splash" 
+window set "Look", "Bordered", splashview$
+window set "Flags", "Not-Closable", splashview$
+window set "Flags", "Not-Zoomable", splashview$
+window set "Flags", "Not-Minimizable", splashview$
+REM Title
+x = (width - 100)/2
+draw text x,14, "HOIPOLLOI INFO", splashview$
+REM always start text at 10,30 - programmer should size the box to compensate
+draw text 10,30, msg$, splashview$
+end sub
+
+
+
+REM *****************************************************************************
+REM ******************************** D A T A **************************************
+REM *****************************************************************************
+
+REM ***********************ATTRIBUTE  DATA*************************************
+REM keeping the line numbers for convenience - they do no
+REM harm and I keep having to refer back here all the time
+label attributes
+1 data "META:address", "Home Address 1: "
+2 data "META:address2", "Home Address 2: "
+3 data "META:aim", "AOL: "
+4 data "META:anniversary", "Anniversary: "
+5 data "META:assist", "Assistant: "
+6 data "META:assistphone", "Assistant's Phone: "
+7 data "META:birthday", "Birthday: "
+8 data "META:cell", "Home Cellphone: "
+9 data "META:children", "Children: "
+10 data "META:city", "Home City: "
+11 data "META:company", "Company: "
+12 data "META:country", "Home Country: "
+13 data "META:cphone", "Cellphone: "
+14 data "META:email", "Home E-mail: "
+15 data "META:email2", "Work E-mail: "
+16 data "META:email3", "E-mail 3: "
+17 data "META:email4", "E-mail 4: "
+18 data "META:email5", "E-mail 5: "
+19 data "META:fax", "Home Fax: "
+20 data "META:firstname", "First Name: "
+21 data "META:group", "Group: "
+22 data "META:hphone", "Home Phone: "
+23 data "META:icq", "ICQ: "
+24 data "META:icquin", "ICQ: "
+25 data "META:jabber", "Jabber: "
+26 data "META:lastname", "Last Name: "
+27 data "META:msn", "MSN: "
+28 data "META:name", "Name: "
+29 data "META:nickname", "Nickname: "
+30 data "META:notes", "Notes: "
+31 data "META:pager", "Pager: "
+32 data "META:position", "Position: "
+33 data "META:spouse", "Spouse: "
+34 data "META:state", "Home State/Province: "
+35 data "META:title", "Title: "
+36 data "META:url", "Home URL: "
+37 data "META:url2", "Work URL: "
+38 data "META:url3", "URL 3: "
+39 data "META:waddress", "Work Address 1: "
+40 data "META:waddress2", "Work Address 2: "
+41 data "META:wcity", "Work City: "
+42 data "META:wcountry", "Work Country: "
+43 data "META:wcphone", "Work Cellphone: "
+44 data "META:wfax", "Work Fax: "
+45 data "META:wphone", "Work Phone: "
+46 data "META:wposition", "Work Position: "
+47 data "META:wstate", "Work State/Province: "
+48 data "META:wzip", "Work Zip/Postal Code: "
+49 data "META:yahoo", "Yahoo: "
+50 data "META:zip", "Home Zip/Postal Code: "
+
+REM *********************BUTTON DATA***************************
+label button_data
+data "refresh_", 		"Refresh           R", "Reload/redisplay the current\nPerson file's data."
+data "copy_", 		"Copy               C", "Copy currently displayed\ndata to system clipboard."
+data "export_", 		"Export             X", "Export currently displayed\ndata to a text file."
+data "harmonise_", 	"Harmonise       A", "Fix discrepancies between\ncompeting attribute formats."
+data "extract_", 		"Extractor...      E", "Extract useful combinations\nof data ready to Copy or Export."
+data "quit_", 		"Quit                 Q", "Bye Bye . . . ."
+
+REM ***********************HELP DATA****************************
+label help_data
+data "                       WELCOME TO HOI POLLOI!"
+data "                       ================"
+data "Drop a Person file anywhere on this window and choose the"
+data "program whose info you want to see displayed. An image will"
+data "only be displayed if you have added one with Mr Peeps."
+data "These images are NOT compatible with Surgeon's Comments,"
+data "so don't even try. Only those categories for which there is"
+data "an entry will be displayed."
+data ""
+data "THE BUTTONS:"
+data ""
+data "REFRESH will reload the Person file after you have edited it"
+data "with an external program. Use it after a HARMONISE."
+data ""
+data "COPY will copy the contents, exactly as you see them, to"
+data "the clipboard."
+data ""
+data "EXPORT will save the contents, exactly as you see them, to"
+data "a text file."
+data ""
+data "HARMONISE will attempt to reconcile the different methods"
+data " that the five supported apps use to store information. This"
+data "uses a wizard-type interface,in which you will be asked which"
+data "of two conflicting entries you want to use."
+data ""
+data "EXTRACTOR will open a utility that will present the data in"
+data "several preset formats, ready to be copied to clipboard and"
+data "pasted  into your word processor, for example, a postal"
+data "address for a letter or envelope."
+data ""
+data "QUIT . . . well, it quits, obviously!"
+data ""
+data "The shortcut keys on each button work with either ALT or"
+data "CTRL, depending on how your system is set up."
+data ""
+data "You can also recall this HELP screen at any time (except in "
+data "Extractor) with either ALT-H or CTRL-H, again, depending on"
+data "your system setup."
+data ""
+data "THE UTILITIES:"
+data ""
+data "Addresser is a very minimal, early version of what has"
+data "become Extractor. Still useful if you only use Be's (and now"
+data  "Yellowtab's) People app to handle handle your People files."
+data ""
+data "CountryAdder is a small app that tries to make up for the"
+data "main deficiency in MrPeeps; the fact that it does not use"
+data "either the Home Address Country or the Work Address"
+data "Country fields."
+data ""
+data "Email 2 People will scan all e-mail on your system, extract"
+data "names and e-mail addresses, and then create appropriate"
+data "People files in a special folder to avoid overwriting existing" 
+data "People. You can move them into the regular People directory"
+data "at any time."
+data ""
+data "HomeMerger enables you to  paste one Person's home"
+data "address details into another Person file."
+data ""
+data "NameSwitcher lets you change the format of your People"
+data "files,e.g. from John Smith to Smith, John, Mr John Smith or"
+data " even Mr Smith, John."
+data ""
+data "NewPersonWizard is an alternative interface to let you create"
+data "new People files."
+data ""
+data "WorkMerger is just like HomeMerger, except that it copies the"
+data "work address."
+data ""
+data "END OF HELP"
+
+REM ***********************APPS DISPLAY DATA*********************
+label RB_people_data
+data 28,29,11,1,10,34,50,12,22,45,19,14,36,21
+
+label RB_MRP_data1
+data 28,29,35,7,4,33,9,21
+label RB_MRP_data2
+data 1,2,10,34,50,22,8,19,14,16,36,38
+label RB_MRP_data3
+data 32,11,39,40,41,47,48,45,43,44,31,15,37,5,6
+label RB_MRP_data4
+data 27,49,3,23,25
+
+label RB_DP_data1
+data 20,26,35,29,21
+label RB_DP_data2
+data 1,2,10,34,50,12,22,19,13,14, 36
+label RB_DP_data3
+data 11, 46,39, 40,41,47,48,42,45,44,43,31,15,37
+label RB_DP_data4
+data 16,17,18, 38,23,3,49,27,25
+
+label RB_surgeon_data
+data 28,11,1,10,34,12,50,14,36,22,45,19,24,29,21
+
+label RB_bluecult_data
+data 28,22,13,14,21
+
+REM *******************EXTRACTOR DISPLAY DATA*******************
+label RB_home_address_data
+data 28,1,2,10,50,12
+
+label RB_work_address_data
+data 28, 11,39,40,41,48,42
+
+label RB_internet_data
+data 14,15,16,17,18,36,37,38,3,23,25,27,49
+
+label RB_phone_data
+data 22,19,8, 45,44,43,6
+
+label RB_personal_data
+data 28,29,7,33,4,9, 21
+
+REM ***********************************************************************
+REM ******************************UTILITIES*******************************
+REM ***********************************************************************
+
+REM *************************ADRESSER*********************************
+label Addresser
+msg$=""
+copystring$=""
+
+REM *****************************************************
+REM Draw the window
+REM *****************************************************
+REM Create illusion of intelligent window placement by varying the starting points:
+ux = int(ran(300)+25): uy=ux: lx = ux+150: ly = uy+220
+REM MAIN WINDOW
+window open ux, uy to lx, ly, "Mainview", "Addresser"
+window set "flags", "Not-Zoomable", "Mainview"
+window set "MaximumTo", 150, 220, "Mainview"
+window set "MinimumTo",  150, 220, "Mainview"
+layout "none", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 5,5 to 145,73, "Mainview"
+draw rect 5,77 to 145,185, "Mainview"
+REM DROP VIEW
+view 8,8 to 142,72, "Dropview", "Mainview"
+makedropview(13,9,2,13,131,62)
+REM COPY BUTTON
+button 2, 190 to 148, 218, "copy_", "Copy to clipboard", "Mainview"
+option set "copy_", "Enable", "false"
+REM RESULTS VIEW
+view 6,78 to 144,184, "Resultsview", "Mainview"
+draw set "BGColor", 255,255,255, "Resultsview"
+draw set "LowColor", 255,255,255, "Resultsview"
+draw text 4,15, "INSTRUCTIONS:", "Resultsview"
+for f = 30 to 100 step 10
+	read msg$
+	draw text 5, f, msg$, "Resultsview"
+next f
+REM get file given as argument or received from HoiPolloi
+if peek("argument") >0 then
+	draw flush "Resultsview"
+	msg$= peek$("argument")
+	getaddressHM$(msg$)
+	option set "copy_", "Enable", "true"
+endif
+REM *****************************************************
+REM Main Loop
+REM *****************************************************
+REM to make things easier for ourselves <g> we are going to ignore
+REM multiple drops (yab v0.2.3 and above) and just grab the first one.
+REM The instructions do say to drop ONE person, after all.
+dim msg$(1)
+inloop = true
+while(inloop)
+	n = split(message$, msg$(), "|:")
+	for i = 0 to n
+		if msg$(i) = "_Dropped" then
+			testtype = check_dropped_filetype(msg$(i+1))
+			if (testtype=0) break
+			copystring$=""
+			draw flush "Resultsview"
+			getaddressHM$(msg$(i+1))
+			option set "copy_", "Enable", "true"
+			break 	REM this break prevents multiple drops being processed. 
+					REM Remove it and you will see them all being flashed to the Resultsview
+		elseif msg$(i) = "_QuitRequested" then
+			inloop = false
+		elseif msg$(i) = "copy_" then
+			copyitem()
+		endif
+	next i
+	sleep 0.1
+wend
+exit
+REM *****************************************************
+REM End Of Main Loop
+REM *****************************************************
+REM *****************************************************
+REM get address subroutine
+REM *****************************************************
+sub getaddressHM$(file$)
+local prefix$
+local suffix$
+local item$
+local sys_string$
+local ypos
+restore restorepointAD
+prefix$= "catattr META:"
+suffix$=" | cut -d\":\" -f3-"
+ypos = 1
+for f = 1 to 7
+	read item$
+	sys_string$ = prefix$ + item$ + " \"" + file$ + "\"" + suffix$
+	msg$= system$(sys_string$)
+	REM strip off initial space
+	msg$ = mid$(msg$, 2)
+	REM strip off newline
+	msg$ = left$(msg$,len(msg$) -1)
+	if msg$ <> "" then
+		REM msg$ has a chr$10 at the end that we do not want to display
+		draw text 4, ypos * 12, msg$, "Resultsview"
+		copystring$ = copystring$ + msg$ + chr$(10)
+		ypos = ypos + 1
+	endif
+next f
+msg$=""
+end sub
+REM *****************************************************
+REM copy to clipboard subroutine
+REM *****************************************************
+sub copyitem()
+if copystring$ <>"" then
+	clipboard copy copystring$
+endif
+end sub
+REM *****************************************************
+REM data
+REM *****************************************************
+data "Drop a Person file on the"
+data "drop box above. This area"
+data "will then show that person's"
+data "address, and you can then"
+data "copy it to the clipboard"
+data"with the button below and"
+data "paste it into your word"
+data "processor or text editor."
+label restorepointAD
+data "name", "company","address","city","state","zip","country"
+
+REM ********************COUNTRY ADDER*****************************
+label CountryAdder
+REM GLOBAL VARIABLES
+dim msg$(1)
+person$ = "None yet, drop one!"
+open_file$ = ""
+hcountry$ = "<none>"
+wcountry$ = "<none>"
+dropped=0
+REM *****************************************************
+REM Draw the window
+REM *****************************************************
+REM Create illusion of intelligent window placement by varying the starting points:
+ux = int(ran(300)+25): uy=ux: lx = ux+200: ly = uy+229
+REM MAIN WINDOW
+window open ux, uy to lx, ly, "Mainview", "CountryAdder"
+window set "flags", "Not-Zoomable", "Mainview"
+window set "MaximumTo", 200, 229, "Mainview"
+window set "MinimumTo",  200, 229, "Mainview"
+layout "none", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 5,5 to 195,73, "Mainview"
+REM DROP VIEW
+view 8,8 to 192,72, "Dropview", "Mainview"
+makedropview(38,9,2,13,181,62)
+REM PRINT INITIAL DATA
+draw text 5,92, "Name:", "Mainview"
+draw text 5,104, "Home:", "Mainview"
+draw text 5,116,  "Work:", "Mainview"
+view 43,83 TO 195,120, "Textview", "Mainview"
+printdata()
+REM CONTROLS
+textcontrol -3,122 to 195,142,"country_", "", "Enter country here", "Mainview"
+button 5, 145 to 195,170, "ch_hcountry_", "Change Home Country", "Mainview"
+button 5, 172 to 195,197, "ch_wcountry_", "Change Work Country", "Mainview"
+button 5, 199 to 195,224, "ch_bcountry_", "Change Both Countries", "Mainview"
+option set "ch_hcountry_", "Enable", "False"
+option set "ch_wcountry_", "Enable", "False"
+option set "ch_bcountry_", "Enable", "False"
+REM get file given as argument or received from HoiPolloi
+if peek("arguments") >  0 then
+	dropmeCA(peek$("argument"))
+endif
+REM *****************************************************
+REM Main Loop
+REM *****************************************************
+REM to make things easier for ourselves <g> we are going to ignore
+REM multiple drops (yab v0.2.3 and above) and just grab the first one.
+REM The instructions do say to drop ONE person, after all.
+inloop = true
+while(inloop)
+	n = split(message$, msg$(), "|:")
+	for i = 0 to n
+		if msg$(i) = "_Dropped" then
+			dropmeCA(msg$(i+1))
+			break 	REM this break prevents multiple drops being processed. 
+					REM Remove it and you will see them all being flashed to the Textview
+		elseif left$(msg$(i), 3) = "ch_" then
+			changecountry()			
+		elseif msg$(i) = "_QuitRequested" then
+			inloop = false
+		endif
+	next i
+	sleep 0.1
+wend
+exit
+REM *****************************************************
+REM End Of Main Loop
+REM *****************************************************
+REM *****************************************************
+REM general change country subroutine
+REM *****************************************************
+sub changecountry() 
+local newcountry$, sys_string$
+if (open_file$ = "") return
+f_error(open_file$,"HP_CountryAdder")
+newcountry$ = textcontrol get$ "country_"
+if (newcountry$ = "Enter_country_here" or newcountry$ = "") return
+if msg$(i) = "ch_hcountry_" then
+	change_hcountry(newcountry$)
+elseif msg$(i) = "ch_wcountry_" then
+	change_wcountry(newcountry$)
+elseif msg$(i) = "ch_bcountry_" then
+	change_hcountry(newcountry$)
+	change_wcountry(newcountry$)
+endif
+printdata()
+end sub
+REM *****************************************************
+REM change home country subroutine
+REM *****************************************************
+sub change_hcountry(newcountry$)
+	if (newcountry$=hcountry$) return
+	sys_string$ = "rmattr META:country \"" + open_file$ + "\""
+	system(sys_string$)
+	sys_string$ = "addattr META:country \"" + newcountry$ + "\" \""+ open_file$ + "\""
+	system(sys_string$)
+	hcountry$ = newcountry$
+end sub
+REM *****************************************************
+REM change work country subroutine
+REM *****************************************************
+sub change_wcountry(newcountry$)
+	if (newcountry$=wcountry$) return
+	sys_string$ = "rmattr META:wcountry \"" + open_file$ + "\""
+	system(sys_string$)
+	sys_string$ = "addattr META:wcountry \"" + newcountry$ + "\" \""+ open_file$ + "\""
+	system(sys_string$)
+	wcountry$ = newcountry$
+end sub
+REM *****************************************************
+REM print current data subroutine
+REM *****************************************************
+sub printdata()
+draw flush "Textview"
+draw text 17,9, person$, "Textview"
+draw text 17,21, hcountry$, "Textview"
+draw text 17,33, wcountry$, "Textview"
+end sub
+REM *****************************************************
+REM accept new dropped file subroutine
+REM *****************************************************
+sub dropmeCA(dropped$)
+local title$(1), h,sys_string$
+testtype = check_dropped_filetype(dropped$)
+if (testtype=0) return
+dropped = dropped + 1
+if dropped = 1 then
+	option set "ch_hcountry_", "Enable", "True"
+	option set "ch_wcountry_", "Enable", "True"
+	option set "ch_bcountry_", "Enable", "True"
+endif
+open_file$ = (dropped$)
+h=split(open_file$, title$(), "/")
+for f = 1 to h
+	person$ = title$(f)
+next f
+sys_string$ = "catattr  META:country \"" + open_file$ + "\" | cut -d\":\" -f3-"
+hcountry$ = system$(sys_string$)
+sys_string$ = "catattr  META:wcountry \"" + open_file$ + "\" | cut -d\":\" -f3-"
+wcountry$ = system$(sys_string$)
+hcountry$ = mid$(hcountry$, 2)			REM strip off initial space
+hcountry$ = left$(hcountry$,len(hcountry$) -1)	REM strip off newline
+wcountry$ = mid$(wcountry$, 2)			REM strip off initial space
+wcountry$ = left$(wcountry$,len(wcountry$) -1)	REM strip off newline
+if (hcountry$="") hcountry$ = "<none>"
+if (wcountry$="") wcountry$ = "<none>"
+printdata()
+end sub
+
+REM *************************EMAIL 2 PEOPLE*******************************
+label Email2People
+infile$= "/var/tmp/mail2ppl.txt"
+directory$= "/var/tmp/Email2People/"
+msg$=""
+sys_string$ = ""
+realname$ = ""
+ename$ = ""
+filename$ = ""
+system("if ! [ -d /var/tmp/Email2People ]; then mkdir /var/tmp/Email2People;fi")
+splasher("Getting full list of E-Mails. This may take a while . . .",300,50)
+system("query \"((MAIL:from==\"*@*\")&&(BEOS:TYPE==\"text/x-email\"))\">/var/tmp/mail2ppl.txt")
+wait 1
+splasher("killsplasher")
+splasher("Creating new People files. This may also take a while . . .",350,50)
+open #1, infile$, "r"
+while (not eof(1))
+	msg$ = getline$(1)
+	sys_string$ = "catattr MAIL:from " + msg$ + "| cut -d\":\" -f3- | cut -d\"\\\"\" -f2"
+	realname$ = system$(sys_string$)
+	realname$ = left$(realname$, len(realname$)-1)
+	sys_string$ = "catattr MAIL:from " + msg$ + "| cut -d\":\" -f3- | cut -d\"<\" -f2 |cut -d\">\" -f1"
+	ename$ = system$(sys_string$)
+	ename$ = left$(ename$, len(ename$)-1)
+	filename$ = "\"" + directory$ + realname$ + "\""
+	system("touch " + filename$)
+	system("settype -t application/x-person " + filename$)
+	system("addattr " + "META:name" + " \"" + realname$ + "\" " + filename$)
+	system("addattr " + "META:email " + ename$ + " " + filename$)
+wend
+close #1
+wait 1
+system("rm -f " + infile$)
+splasher("killsplasher")
+system("/boot/beos/system/Tracker " + directory$)
+wait 0.2
+system("/boot/beos/system/Tracker " + "/boot/home/people")
+alert "All done! You can now drag any new People files you want to keep across to the main People folder and delete the rest.", "OK, thanks", 1
+exit
+
+REM ******************************HOME MERGER************************************
+LABEL HomeMerger
+msg$=""
+dropped1$=""
+dropped2$=""
+dropped_temp$=""
+dim person1$(7)
+REM *****************************************************
+REM Draw the window
+REM *****************************************************
+REM Create illusion of intelligent window placement by varying the starting points:
+ux = int(ran(300)+25): uy=ux: lx = ux+350: ly = uy+220
+REM MAIN WINDOW
+window open ux, uy to lx, ly, "Mainview", "Home Address Merger"
+window set "flags", "Not-Zoomable", "Mainview"
+window set "MaximumTo", 350, 220, "Mainview"
+window set "MinimumTo",  350, 220, "Mainview"
+layout "none", "Mainview"
+REM DROPVIEW1
+view 8,8 to 142,72, "Dropview1", "Mainview"
+if (peek("arguments") =  0) makedropview(13,10,2,13,131,62, "Dropview1")
+draw set 1, "HighSolidFill"
+draw rect 5,5 to 145,75, "Mainview"
+REM DROPVIEW2
+view 208,8 to 342,72, "Dropview2", "Mainview"
+makedropview(13,10,2,13,131,62, "Dropview2")
+draw set 1, "HighSolidFill"
+draw rect 205,5 to 345,75, "Mainview"
+REM COPY BUTTON
+button 2, 190 to 148, 218, "copy_", "Copy Address Details -->", "Mainview"
+option set "copy_", "Enable", "false"
+REM SWITCH BUTTON
+button 202, 190 to 348, 218, "switch_", "Switch Persons <-->", "Mainview"
+option set "switch_", "Enable", "false"
+REM RESULTSVIEW1
+view 8,78 to 142,185, "Resultsview1", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 5,75 to 145,188, "Mainview"
+if (peek("arguments") =  0) draw_instructions(1)
+msg$=""
+REM RESULTSVIEW2
+view 208,78 to 342,184, "Resultsview2", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 205,5 to 345,187, "Mainview"
+draw_instructions(2)
+msg$=""
+REM DRAW ARROW
+draw_arrow()
+REM get file given as argument or received from HoiPolloi
+if peek("arguments") >  0 then
+	getaddressHM(peek$("argument"), "Dropview1")
+endif
+REM *****************************************************
+REM Main Loop
+REM *****************************************************
+REM to make things easier for ourselves <g> we are going to ignore
+REM multiple drops (yab v0.2.3 and above) and just grab the first one.
+REM The instructions do say to drop ONE person, after all.
+dim msg$(1)
+inloop = true
+while(inloop)
+	n = split(message$, msg$(), "|:")
+	for i = 0 to n
+		if msg$(i) = "_Dropped" then
+			getaddressHM(msg$(i+1), msg$(i-1))
+			break 	REM this break prevents multiple drops being processed. 
+					REM Remove it and you will see them all being flashed to the Resultsview
+		elseif msg$(i) = "_QuitRequested" then
+			inloop = false
+		elseif msg$(i) = "copy_" then
+			copyitemHM()
+		elseif msg$(i) = "switch_" then
+			dropped_temp$= dropped1$
+			getaddressHM(dropped2$, "Dropview1")
+			getaddressHM(dropped_temp$, "Dropview2")
+		endif
+	next i
+	sleep 0.1
+wend
+exit
+REM *****************************************************
+REM End Of Main Loop
+REM *****************************************************
+REM *****************************************************
+REM get address subroutine for merger apps
+REM *****************************************************
+sub getaddressHM(file$, dropbox$)
+local prefix$, suffix$, sys_string$, view_to_fill$
+local ypos, testtype
+prefix$= "catattr META:"
+suffix$=" | cut -d\":\" -f3-"
+ypos = 1
+testtype = check_dropped_filetype(file$) 
+if (testtype = 0 ) return
+restore restorepointHM
+if dropbox$ = "Dropview1" then
+	view_to_fill$ = "Resultsview1"
+	dropped1$ = file$
+elseif dropbox$ = "Dropview2" then
+	view_to_fill$ = "Resultsview2"
+	dropped2$ = file$
+endif
+draw flush view_to_fill$
+for f = 1 to 7
+	read item$
+	sys_string$ = prefix$ + item$ + " \"" + file$ + "\"" + suffix$
+	msg$= system$(sys_string$)
+	REM strip off initial space
+	msg$ = mid$(msg$, 2)
+	REM strip off newline
+	msg$ = left$(msg$,len(msg$) -1)
+	if item$ = "name" then
+		draw flush dropbox$
+		draw text 5,20, "Person " + right$(dropbox$, 1) + ":", dropbox$
+		draw text 5,40, msg$, dropbox$
+	else
+		if msg$ <> "" then
+			draw text 4, ypos * 12, msg$, view_to_fill$
+			ypos = ypos + 1
+		endif
+	endif
+	if dropbox$ = "Dropview1" then
+		person1$(f) = msg$
+	endif
+next  f
+if dropped1$ <> ""  and dropped2$ <> "" then
+	option set "copy_", "Enable", "true"
+	option set "switch_", "Enable", "true"
+endif
+msg$=""
+end sub
+REM *****************************************************
+REM copy addresses subroutine
+REM *****************************************************
+sub copyitemHM()
+local sys_string$
+local confirm
+confirm = alert "Do you really want to copy all the address data from Person 1 to Person 2? (This operation cannot be undone)", "Yes", "No", "", "warning"
+if (confirm = 2) return
+restore restorepointHM
+read msg$
+for f = 2 to 7
+	read msg$
+	sys_string$ = "rmattr META:" + msg$ + " \"" + dropped2$ + "\""
+	system(sys_string$)
+	sys_string$ = "addattr META:" + msg$ + " \"" + person1$(f)  + "\" \"" + dropped2$ + "\""
+	system(sys_string$)
+next f
+	getaddressHM(dropped2$, "Dropview2")
+end sub
+REM *****************************************************
+REM data
+REM *****************************************************
+label restorepointHM
+data "name", "address","address2","city","state","zip","country"
+
+REM *****************************WORK MERGER***************************************
+LABEL WorkMerger
+msg$=""
+dropped1$=""
+dropped2$=""
+dropped_temp$=""
+dim person1$(8)
+REM *****************************************************
+REM Draw the window
+REM *****************************************************
+REM Create illusion of intelligent window placement by varying the starting points:
+ux = int(ran(300)+25): uy=ux: lx = ux+350: ly = uy+220
+REM MAIN WINDOW
+window open ux, uy to lx, ly, "Mainview", "Work Address Merger"
+window set "flags", "Not-Zoomable", "Mainview"
+window set "MaximumTo", 350, 220, "Mainview"
+window set "MinimumTo",  350, 220, "Mainview"
+layout "none", "Mainview"
+REM DROPVIEW1
+view 8,8 to 142,72, "Dropview1", "Mainview"
+if (peek("arguments") =  0) makedropview(13,10,2,13,131,62, "Dropview1")
+draw set 1, "HighSolidFill"
+draw rect 5,5 to 145,75, "Mainview"
+REM DROPVIEW2
+view 208,8 to 342,72, "Dropview2", "Mainview"
+makedropview(13,10,2,13,131,62, "Dropview2")
+draw set 1, "HighSolidFill"
+draw rect 205,5 to 345,75, "Mainview"
+REM COPY BUTTON
+button 2, 190 to 148, 218, "copy_", "Copy Address Details -->", "Mainview"
+option set "copy_", "Enable", "false"
+REM SWITCH BUTTON
+button 202, 190 to 348, 218, "switch_", "Switch Persons <-->", "Mainview"
+option set "switch_", "Enable", "false"
+REM RESULTSVIEW1
+view 8,78 to 142,185, "Resultsview1", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 5,75 to 145,188, "Mainview"
+if (peek("arguments") =  0) draw_instructions(1)
+msg$=""
+REM RESULTSVIEW2
+view 208,78 to 342,184, "Resultsview2", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 205,5 to 345,187, "Mainview"
+draw_instructions(2)
+msg$=""
+REM DRAW ARROW
+draw_arrow()
+REM get file given as argument or received from HoiPolloi
+if peek("arguments") >  0 then
+	getaddressWM(peek$("argument"), "Dropview1")
+endif
+REM *****************************************************
+REM Main Loop
+REM *****************************************************
+REM to make things easier for ourselves <g> we are going to ignore
+REM multiple drops (yab v0.2.3 and above) and just grab the first one.
+REM The instructions do say to drop ONE person, after all.
+dim msg$(1)
+inloop = true
+while(inloop)
+	n = split(message$, msg$(), "|:")
+	for i = 0 to n
+		if msg$(i) = "_Dropped" then
+			getaddressWM(msg$(i+1), msg$(i-1))
+			break 	REM this break prevents multiple drops being processed. 
+					REM Remove it and you will see them all being flashed to the Resultsview
+		elseif msg$(i) = "_QuitRequested" then
+			inloop = false
+		elseif msg$(i) = "copy_" then
+			copyitemWM()
+		elseif msg$(i) = "switch_" then
+			dropped_temp$= dropped1$
+			getaddressWM(dropped2$, "Dropview1")
+			getaddressWM(dropped_temp$, "Dropview2")
+		endif
+	next i
+	sleep 0.1
+wend
+exit
+REM *****************************************************
+REM End Of Main Loop
+REM *****************************************************
+REM *****************************************************
+REM get address subroutine for merger apps
+REM *****************************************************
+sub getaddressWM(file$, dropbox$)
+local prefix$, suffix$, sys_string$, view_to_fill$
+local ypos, testtype
+prefix$= "catattr META:"
+suffix$=" | cut -d\":\" -f3-"
+ypos = 1
+testtype = check_dropped_filetype(file$) 
+if (testtype = 0 ) return
+restore restorepointWM
+if dropbox$ = "Dropview1" then
+	view_to_fill$ = "Resultsview1"
+	dropped1$ = file$
+elseif dropbox$ = "Dropview2" then
+	view_to_fill$ = "Resultsview2"
+	dropped2$ = file$
+endif
+draw flush view_to_fill$
+for f = 1 to 8
+	read item$
+	sys_string$ = prefix$ + item$ + " \"" + file$ + "\"" + suffix$
+	msg$= system$(sys_string$)
+	REM strip off initial space
+	msg$ = mid$(msg$, 2)
+	REM strip off newline
+	msg$ = left$(msg$,len(msg$) -1)
+	if item$ = "name" then
+		draw flush dropbox$
+		draw text 5,20, "Person " + right$(dropbox$, 1) + ":", dropbox$
+		draw text 5,40, msg$, dropbox$
+	else
+		if msg$ <> "" then
+			draw text 4, ypos * 12, msg$, view_to_fill$
+			ypos = ypos + 1
+		endif
+	endif
+	if dropbox$ = "Dropview1" then
+		person1$(f) = msg$
+	endif
+next  f
+if dropped1$ <> ""  and dropped2$ <> "" then
+	option set "copy_", "Enable", "true"
+	option set "switch_", "Enable", "true"
+endif
+msg$=""
+end sub
+REM *****************************************************
+REM copy addresses subroutine
+REM *****************************************************
+sub copyitemWM()
+local sys_string$
+local confirm
+confirm = alert "Do you really want to copy all the address data from Person 1 to Person 2? (This operation cannot be undone)", "Yes", "No", "", "warning"
+if (confirm = 2) return
+restore restorepointWM
+read msg$
+for f = 2 to 8
+	read msg$
+	sys_string$ = "rmattr META:" + msg$ + " \"" + dropped2$ + "\""
+	system(sys_string$)
+	sys_string$ = "addattr META:" + msg$ + " \"" + person1$(f)  + "\" \"" + dropped2$ + "\""
+	system(sys_string$)
+next f
+	getaddressWM(dropped2$, "Dropview2")
+end sub
+REM *****************************************************
+REM data
+REM *****************************************************
+label restorepointWM
+data "name", "company", "waddress","waddress2","wcity","wstate","wzip","wcountry"
+
+REM ***********************New Person Wizard************************************
+label NewPersonWizard
+choice = 0
+setting$="/boot/home/config/settings/HoiPolloi.settings"
+dim details$(27)
+REM ****************************************************************
+REM MAIN LOOP
+REM ****************************************************************
+choice = alert "What kind of Person File will this be?", "Personal", "Business", "None", "none"
+while(choice <>3)
+	getcommon()
+	if (choice = 1)  getpersonal()
+	if (choice = 2) getbusiness() 
+	write_person()
+	choice = alert "Create another one?", "Yes, Personal", "Yes, Business", "No, Exit Now", "none"
+wend
+exit
+REM ****************************************************************
+REM GET COMMON VALUES
+REM ****************************************************************
+sub getcommon()
+for f = 1 to 27
+	details$(f) = ""
+next f
+shared_display(200,95)
+textcontrol 3,3 to 197,13, "new_title_", "Title", "", "Entryview"
+textcontrol 3,23 to 197,33, "new_fname_", "First name", "", "Entryview"
+textcontrol 3,43 to 197,53, "new_lname_", "Last Name", "", "Entryview"
+option set "new_title_", "Focus", "true"
+msg$= ""
+while (msg$ <> "manual_OK_|" and msg$ <> "manual_not_OK_|")
+	msg$ = message$
+	wait 0.01
+wend
+if (msg$ = "manual_not_OK_|") window close "Entryview": exit
+details$(1) = textcontrol get$ "new_title_"
+details$(2) = textcontrol get$ "new_fname_"
+details$(3) = textcontrol get$ "new_lname_"
+details$(4) = details$(2) + " " + details$(3)
+window close "Entryview"
+end sub
+REM ****************************************************************
+REM GET PERSONAL VALUES
+REM ****************************************************************
+sub getpersonal()
+shared_display(200,290)
+display_common()
+textcontrol 3,55 to 197,65, "address1_", "Home Address", "", "Entryview"
+textcontrol 3,75 to 197,82, "address2_", "Home Address", "", "Entryview"
+textcontrol 3,95 to 197,102, "city_", "Home City", "", "Entryview"
+textcontrol 3,115 to 197,122, "state_", "Home State", "", "Entryview"
+textcontrol 3,135 to 197,142, "zip_", "Home Zip Code", "", "Entryview"
+textcontrol 3,155 to 197,162, "country_", "Home Country", "", "Entryview"
+textcontrol 3,175 to 197,182, "phone_", "Home Phone", "", "Entryview"
+textcontrol 3,195 to 197,202, "cell_", "Home Cellphone", "", "Entryview"
+textcontrol 3,215 to 197,222, "email_", "Home E-mail", "", "Entryview"
+textcontrol 3,235 to 197,242, "fax_", "Home Fax", "", "Entryview"
+option set "address1_", "Focus", "true"
+msg$= ""
+while (msg$ <> "manual_OK_|" and msg$ <> "manual_not_OK_|")
+	msg$ = message$
+	wait 0.01
+wend
+if (msg$ = "manual_not_OK_|") window close "Entryview": exit
+getvalues(5)
+end sub
+REM ****************************************************************
+REM GET BUSINESS VALUES
+REM ****************************************************************
+sub getbusiness()
+shared_display(200,335)
+display_common()
+textcontrol 3,55 to 197,65, "position_", "Position",  "", "Entryview" 
+textcontrol 3,75 to 197,82, "company_", "Company", "", "Entryview" 
+textcontrol 3,95 to 197,102, "address1_", "Work Address", "", "Entryview" 
+textcontrol 3,115 to 197,122,"address2_", "Work Address", "", "Entryview"
+textcontrol 3,135 to 197,142,"city_", "Work City", "", "Entryview"
+textcontrol 3,155 to 197,162, "state_", "Work State", "", "Entryview"
+textcontrol 3,175 to 197,182, "zip_", "Work Zip Code", "", "Entryview"
+textcontrol 3,195 to 197,202, "country_", "Work Country", "", "Entryview"
+textcontrol 3,215 to 197,222, "phone_", "Work Phone", "", "Entryview"
+textcontrol 3,235 to 197,242, "cell_", "Work Cellphone", "", "Entryview"
+textcontrol 3,255 to 197,262, "email_", "Work E-mail", "", "Entryview"
+textcontrol 3,275 to 197,282, "fax_", "Work Fax", "", "Entryview"
+option set "position_", "Focus", "true"
+msg$= ""
+while (msg$ <> "manual_OK_|" and msg$ <> "manual_not_OK_|")
+	msg$ = message$
+	wait 0.01
+wend
+if (msg$ = "manual_not_OK_|") window close "Entryview": exit
+details$(25) = textcontrol get$ "position_"
+details$(26) = details$(25)
+details$(27) = textcontrol get$ "company_"
+getvalues(15)
+end sub
+REM ****************************************************************
+REM extract VALUES
+REM ****************************************************************
+sub getvalues(x)
+details$(x) = textcontrol get$ "address1_": x = x + 1
+details$(x) = textcontrol get$ "address2_": x = x + 1
+details$(x) = textcontrol get$ "city_": x = x + 1
+details$(x) = textcontrol get$ "state_": x = x + 1
+details$(x) = textcontrol get$ "zip_": x = x + 1
+details$(x) = textcontrol get$ "country_": x = x + 1
+details$(x) = textcontrol get$ "phone_": x = x + 1
+details$(x) = textcontrol get$ "cell_": x = x + 1
+details$(x) = textcontrol get$ "email_": x = x + 1
+details$(x) = textcontrol get$ "fax_"
+window close "Entryview"
+end sub
+REM ****************************************************************
+REM Write person details to file
+REM ****************************************************************
+sub write_person()
+local filename$, attribute$, sys_string$
+filename$ = "/boot/home/people/" + details$(4)
+open #1, filename$, "w"
+close #1
+restore alldata
+for f = 1 to 27
+	read attribute$
+	if details$(f) <>"" then
+		sys_string$ = "addattr META:" + attribute$ + " \"" + details$(f) + "\" \"" + filename$ + "\""
+		system(sys_string$)
+	endif
+next f
+sys_string$ = "addattr META:cphone  \"" + details$(12) + "\" \"" + filename$ + "\""
+system(sys_string$)
+sys_string$= "settype -t application/x-person " + " \"" + filename$ + "\""
+system(sys_string$)
+end sub
+REM ****************************************************************
+REM shared common personal and business display
+REM ****************************************************************
+sub shared_display(xdim,ydim)
+local ux,uy
+ux = int ((peek("DesktopWidth")/2) -(xdim/2))
+uy = int ((peek("DesktopHeight")/2) -(ydim/2))
+window open ux, uy to ux+xdim, uy + ydim, "Entryview", ""
+window set "Look", "Modal", "Entryview"
+window set "flags", "Not-Zoomable", "Entryview"
+window set "MaximumTo", xdim, ydim, "Entryview"
+window set "MinimumTo",  xdim, ydim, "Entryview"
+layout "none", "Entryview"
+button 4, ydim - 28 to int((xdim/2) -2), ydim - 5, "manual_OK_", "OK, Use these", "Entryview"
+button int((xdim/2) + 2), ydim - 28 to xdim - 4, ydim - 5, "manual_not_OK_", "No, Exit", "Entryview"
+end sub
+REM ****************************************************************
+REM display common data
+REM ****************************************************************
+sub display_common()
+draw text 3,12, "Title: " + details$(1), "Entryview"
+draw text 3,24, "First name: " + details$(2), "Entryview"
+draw text 3,36, "Last name: " + details$(3), "Entryview"
+draw text 3,48, "Full Name: " + details$(4), "Entryview"
+end sub
+REM ****************************************************************
+REM DATA
+REM ****************************************************************
+label alldata
+data "title", "firstname", "lastname", "name" 
+data "address", "address2", "city", "state", "zip", "country", "hphone", "cell", "email", "fax"
+data "waddress", "waddress2", "wcity", "wstate", "wzip", "wcountry", "wphone", "wcphone", "email2", "wfax", "wposition", "position", "company" 
+
+REM *************************Name Switcher***************************
+label NameSwitcher
+REM Global variables
+open_file$= ""		REM full filename
+file_stem$ = ""		REM pathname without filename
+msg$=""
+msg2$ = ""
+tooltip$ = "Choose a new filename for the selected Person" + chr$(10) + "Only options that will change the present filename"  + chr$(10) + "Will be available."
+dim details$(5)		REM This is the main array used to store the Person details we're interested in
+REM details$(1) = title
+REM details$(2) = first name
+REM details$(3) = last name
+REM details$(4) = full name
+REM details$(5) = filename without path
+loaded = 0
+REM *****************************************************
+REM Draw the window
+REM *****************************************************
+REM Create illusion of intelligent window placement by varying the starting points:
+ux = int(ran(250)+25): uy=ux: lx = ux+200: ly = uy+294
+REM MAIN WINDOW
+window open ux, uy to lx, ly, "Mainview", "NameSwitcher"
+window set "flags", "Not-Zoomable", "Mainview"
+window set "MaximumTo", 200, 294, "Mainview"
+window set "MinimumTo",  200, 294, "Mainview"
+layout "none", "Mainview"
+draw set 1, "HighSolidFill"
+draw rect 5,5 to 195,73, "Mainview"
+tooltip color "bgcolor",216,216,216
+tooltip color "textcolor",0,0,0
+REM DROP VIEW
+view 8,8 to 192,72, "Dropview", "Mainview"
+makedropview(39,9,2,13,181,62)
+REM details view
+view 65, 75 to  195,145, "Detailview", "Mainview"
+REM Permanent text
+draw text 5,88, "Filename:", "Mainview"
+draw text 5,100, "Full Name:", "Mainview"
+draw text 5,112, "Title: ", "Mainview"
+draw text 5,124, "1st name:", "Mainview"
+draw text 5,136, "Surname:", "Mainview"
+for f = 13 to 61 step 12
+	draw text 0,f, "<none>", "Detailview"
+next f
+REM Buttons
+restore buttondata
+for f = 142 to 267 step 25
+	read msg$, msg2$
+	button 5, f to 195, f + 23, msg$, msg2$, "Mainview"
+	tooltip msg$, tooltip$
+next f
+tooltip "manual_input_", "Supply changed title, firstname and lastname attributes"
+tooltip "do_it_", "Commit changes to disk"
+tooltip "Dropview", "Drop people here"
+
+REM Disable all buttons
+buttons_on_off("false", 6)
+REM get file given as argument or received from HoiPolloi
+if peek("arguments") >  0 then
+	getname(peek$("argument"))
+	makeoptions()
+endif
+REM *****************************************************
+REM Main Loop
+REM *****************************************************
+REM to make things easier for ourselves <g> we are going to ignore
+REM multiple drops (yab v0.2.3 and above) and just grab the first one.
+REM The instructions do say to drop ONE person, after all.
+dim msg$(1)
+inloop = true
+while(inloop)
+	n = split(message$, msg$(), "|:")
+	for i = 0 to n
+		if msg$(i) = "_Dropped" then
+			getname(msg$(i+1))
+			break 	REM this break prevents multiple drops being processed. 
+					REM Remove it and you will see them all being flashed to the Resultsview
+		elseif msg$(i) = "_QuitRequested" then
+			inloop = false
+		elseif msg$(i) = "manual_input_" then
+			manual_input()
+		elseif msg$(i) = "first_last_" then
+			details$(5) = details$(2) + " " + details$(3)
+			makeoptions()
+		elseif msg$(i) = "title_first_last_" then
+			details$(5) = details$(1) + " " + details$(2) + " " + details$(3)
+			makeoptions()
+		elseif msg$(i) = "last_first_" then
+			details$(5) = details$(3) + ", " + details$(2)
+			makeoptions()
+		elseif msg$(i) = "title_last_first_" then
+			details$(5) = details$(1) + " " + details$(3) + ", " + details$(2)
+			makeoptions()
+		elseif msg$(i) = "do_it_" then
+			do_it("name_only")
+		endif
+	next i
+	sleep 0.01
+wend
+exit
+REM *****************************************************
+REM End Of Main Loop
+REM *****************************************************
+REM *****************************************************
+REM announce the change subroutine
+REM *****************************************************
+sub results_announce()
+ux = window get "Mainview", "Position-X"
+uy = (window get "Mainview", "Position-Y") + 50
+window open ux, uy to ux+200, uy + 95, "Announceview", ""
+window set "Look", "Modal", "Announceview"
+window set "flags", "Not-Zoomable", "Announceview"
+window set "MaximumTo", 200, 95, "Announceview"
+window set "MinimumTo",  200, 95, "Announceview"
+draw set "Swis721 BT, Bold,22", "Announceview"
+layout "none", "Announceview"
+draw text 10,35, "The filename has", "Announceview"
+draw text 10,70, "been changed.", "Announceview"
+wait 2
+window close "Announceview"
+end sub
+REM *****************************************************
+REM make changes subroutine
+REM *****************************************************
+sub do_it(all$)
+local sys_string$
+local prefix$
+local suffix$
+local attr$
+f_error(open_file$,"HP_NameSwitcher")
+prefix$ = "rmattr META:"
+suffix$ = " \"" + open_file$ + "\""
+if all$ = "attr_only" or all$ = "all" then
+	restore restorepoint
+	for f = 1 to 4
+		read attr$
+		sys_string$ = prefix$ + attr$ + suffix$
+		system(sys_string$)
+	next f
+	prefix$ = "addattr -t string META:"
+	restore restorepoint
+	for f = 1 to 4
+		read attr$
+		sys_string$ = prefix$+ attr$  + " \"" + details$(f) + "\""  + suffix$
+		system(sys_string$)
+	next f
+elseif all$ = "name_only" or all$ = "all" then
+	sys_string$ = "mv \"" + open_file$ + "\" \"" + file_stem$ + details$(5) + "\""
+	system(sys_string$)
+	open_file$ = file_stem$ + details$(5)
+	getname(open_file$)
+	results_announce()
+endif
+end sub
+REM *****************************************************
+REM manual input subroutine
+REM *****************************************************
+sub manual_input()
+ux = window get "Mainview", "Position-X"
+uy = (window get "Mainview", "Position-Y") + 50
+window open ux, uy to ux+200, uy + 95, "Entryview", ""
+window set "Look", "Modal", "Entryview"
+window set "flags", "Not-Zoomable", "Entryview"
+window set "MaximumTo", 200, 95, "Entryview"
+window set "MinimumTo",  200, 95, "Entryview"
+layout "none", "Entryview"
+textcontrol 3,3 to 197,13, "new_title_", "Title", details$(1), "Entryview"
+textcontrol 3,23 to 197,33, "new_fname_", "First name", details$(2), "Entryview"
+textcontrol 3,43 to 197,53, "new_lname_", "Last Name", details$(3), "Entryview"
+button 4, 67 to 98, 90, "manual_OK_", "Use these values", "Entryview"
+button 102, 67 to 196, 90, "manual_not_OK_", "Return to NS", "Entryview"
+msg$= ""
+while (msg$ <> "manual_OK_|" and msg$ <> "manual_not_OK_|")
+	msg$ = message$
+	wait 0.01
+wend
+if (msg$ = "manual_not_OK_|") window close "Entryview": return
+details$(1) = textcontrol get$ "new_title_"
+details$(2) = textcontrol get$ "new_fname_"
+details$(3) = textcontrol get$ "new_lname_"
+details$(4) = details$(2) + " " + details$(3)
+window close "Entryview"
+do_it("attr_only")
+makeoptions()
+end sub
+REM *****************************************************
+REM get name details subroutine
+REM *****************************************************
+sub getname(file$)
+local testtype
+local h
+local prefix$
+local suffix$
+local item$
+local sys_string$
+open_file$ = file$
+local filename$(1)
+prefix$= "catattr META:"
+suffix$=" | cut -d\":\" -f3-"
+testtype = check_dropped_filetype(file$) 
+if (testtype = 0 ) return
+loaded = loaded + 1
+if loaded = 1 then
+	option set "manual_input_", "Enable", "true"
+	option set "do_it_", "Enable", "true"
+endif
+REM clear array
+for f = 1 to 5
+	details$(f) = ""
+next f
+REM now go read those attributes
+restore restorepoint
+for f = 1 to 4
+	read item$
+	sys_string$ = prefix$ + item$ + " \"" + file$ + "\"" + suffix$
+	msg$= system$(sys_string$)
+	REM strip off initial space
+	msg$ = mid$(msg$, 2)
+	REM strip off newline
+	msg$ = left$(msg$,len(msg$) -1)
+	details$(f) = msg$
+next f
+REM split the filename from the pathname
+REM also get the first part - we'll need it later
+h=split(file$, filename$(), "/")
+file_stem$ = ""
+REM grab the second last and the last parts of the pathname
+for f = 1 to h
+	if f < h then
+		file_stem$ = file_stem$ + filename$(f) + "/"
+	else
+		details$(5) = filename$(f)
+	endif
+next f
+if details$(2) = "" or details$(3) = "" then
+	manual_input() 
+endif
+makeoptions()
+end sub
+REM *****************************************************
+REM create new options subroutine
+REM *****************************************************
+sub makeoptions()
+local first_last$
+local title_first_last$
+local last_first$
+local title_last_first$
+REM display details
+draw flush "Detailview"
+draw text 2,13, details$(5), "Detailview"
+draw text 2,25, details$(4), "Detailview"
+draw text 2,37, details$(1), "Detailview"
+draw text 2,49, details$(2), "Detailview"
+draw text 2,61, details$(3), "Detailview"
+REM create button text
+first_last$ = "USE: " + details$(2) + " " + details$(3)
+title_first_last$ = "USE: " + details$(1) + " " + mid$(first_last$, 6)
+last_first$ = "USE: " + details$(3) + ", " + details$(2)
+title_last_first$ = "USE: " + details$(1) + " " + mid$(last_first$, 6)
+if (len(first_last$)>30) first_last$ = left$(first_last$, 30) + " . . ."
+if (len(title_first_last$)>30) title_first_last$ = left$(title_first_last$, 30) + " . . ."
+if (len(last_first$)>30) last_first$ = left$(last_first$, 30) + " . . ."
+if (len(title_last_first$)>30) title_last_first$ = left$(title_last_first$, 30) + " . . ."
+REM place new labels on buttons
+REM Start by enabling all buttons
+buttons_on_off("true",4)
+REM If no title exists, disable relevant buttons
+if details$(1) = "" then
+	title_first_last$ = "This Option Not Available"	
+	title_last_first$ = "This Option Not Available"
+	option set "title_first_last_", "Enable", "false"
+	option set "title_last_first_", "Enable", "false"
+endif
+REM disable buttons that already have the same option as the existing filename
+if (mid$(first_last$, 6, 24) = mid$(details$(5),1, 24)) first_last$ = "This Option Not Available": option set "first_last_", "Enable", "False"
+if (mid$(title_first_last$, 6, 24) = mid$(details$(5),1, 24)) title_first_last$ = "This Option Not Available": option set "title_first_last_", "Enable", "False"
+if (mid$(last_first$, 6, 24) = mid$(details$(5),1, 24)) last_first$ = "This Option Not Available": option set "last_first_", "Enable", "False"
+if (mid$(title_last_first$, 6, 24) = mid$(details$(5),1, 24)) title_last_first$ = "This Option Not Available": option set "title_last_first_", "Enable", "False"
+option set "first_last_",  "Label", first_last$
+option set "title_first_last_", "Label", title_first_last$
+option set "last_first_", "Label", last_first$
+option set "title_last_first_", "Label", title_last_first$
+if mid$(open_file$, len(file_stem$) + 1) = details$(5) then
+	option set "do_it_", "Enable", "false"
+else
+	option set "do_it_", "Enable", "true"
+endif
+end sub
+REM *****************************************************
+REM buttons on/off subroutine
+REM *****************************************************
+sub buttons_on_off(TF$,number)
+restore buttondata
+for f = 1 to number
+	read msg$, msg2$
+	option set msg$, "Enable", TF$
+next f
+end sub
+REM *****************************************************
+REM data
+REM *****************************************************
+label restorepoint
+data "title", "firstname","lastname", "name"
+label buttondata
+data "first_last_",  "FirstName LastName"
+data "title_first_last_", "Title FirstName LastName"
+data "last_first_", "LastName, FirstName"
+data "title_last_first_", "Title LastName, FirstName"
+data "manual_input_", "Change Names"
+data "do_it_", " DO IT! "
+label titles
+REM these are what I test against to determine if the first word in a filename is a title or a name
+REM By all means add titles from your own language
+REM Don't worry about periods after abbreviations - HP_NS tests for those
+data "Mr", "Mrs", "Miss", "Dokter"
+data "Ms", "Dr", "Prof", "M"
+data "Mister", "Doctor", "Professor"
+data "Herr", "Frau", "Dhr", "Mev"
+data "De heer", "Mevrouw", "Doktor"
+data "Ing", "Mme", "The Hon"
+data "Rev", "Reverend"
+data "Sr", "Sra", "Msgr", "Msg"
+data "Mnr", "Mijnheer", "Meneer", "Mevrou"
+data "Mejuffrou", "Dokter", "Pres"
+data "President", "Senator", "Signor"
+data "Señor", "Signora", "Señora"
+data "END OF TITLES"
+
+label Help
+print  "HOIPOLLOI HELP:"
+print
+print "Usage: HoiPolloi <help ad ca e2p hm ns npw wm> <filename>"
+print
+print "No parameters --  run HoiPolloi"
+print "         ad   --  run Addresser"
+print "         ca   --  run CountryAdder"
+print "         e2p  --  run Email2People"
+print "         hm   --  run HomeMerger"
+print "         ns   --  run NameSwitcher"
+print "         npw  --  run NewPersonWizard"
+print "         wm   --  run WorkMerger"
+print "         help --  this help text"
+print 
+print "Use only one of the parameters, either in ALL-UPPER or all-lower case."
+print " The filename parameter will have no effect on npw, e2p, or on Hoipolloi itself"
+exit
+
+
